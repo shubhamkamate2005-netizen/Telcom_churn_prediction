@@ -1,17 +1,18 @@
 from pathlib import Path
 
+import joblib
+import pandas as pd
 import streamlit as st
-from pyspark.ml import Pipeline, PipelineModel
-from pyspark.ml.classification import RandomForestClassifier
-from pyspark.ml.feature import StandardScaler, StringIndexer, VectorAssembler
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, trim, when
-from pyspark.sql.types import DoubleType, IntegerType
+from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_PATH = BASE_DIR / "churn_data.csv"
-MODEL_PATH = BASE_DIR / "churn_prediction_pipeline_model"
+MODEL_PATH = BASE_DIR / "model.pkl"
+MODEL_VERSION = "sklearn_churn_pipeline_v2"
 
 CATEGORICAL_COLS = [
     "gender",
@@ -31,100 +32,100 @@ CATEGORICAL_COLS = [
     "PaymentMethod",
 ]
 NUMERIC_COLS = ["SeniorCitizen", "tenure", "MonthlyCharges", "TotalCharges"]
+FEATURE_COLS = CATEGORICAL_COLS + NUMERIC_COLS
+TARGET_COL = "Churn"
 
 
-def spark_path(path: Path) -> str:
-    return path.resolve().as_posix()
+def clean_churn_data(df: pd.DataFrame) -> pd.DataFrame:
+    cleaned = df.copy()
 
+    for column in NUMERIC_COLS:
+        cleaned[column] = pd.to_numeric(cleaned[column], errors="coerce")
 
-@st.cache_resource(show_spinner=False)
-def get_spark_session() -> SparkSession:
-    return (
-        SparkSession.builder.appName("TelecomCustomerChurnStreamlit")
-        .master("local[2]")
-        .config("spark.default.parallelism", "4")
-        .config("spark.sql.shuffle.partitions", "4")
-        .config("spark.ui.showConsoleProgress", "false")
-        .getOrCreate()
-    )
-
-
-def clean_churn_data(df):
-    return (
-        df.withColumn(
-            "TotalCharges",
-            when(trim(col("TotalCharges")) == "", "0.0").otherwise(col("TotalCharges")),
-        )
-        .withColumn("SeniorCitizen", col("SeniorCitizen").cast(IntegerType()))
-        .withColumn("tenure", col("tenure").cast(IntegerType()))
-        .withColumn("MonthlyCharges", col("MonthlyCharges").cast(DoubleType()))
-        .withColumn("TotalCharges", col("TotalCharges").cast(DoubleType()))
-        .dropna()
-    )
+    cleaned[TARGET_COL] = cleaned[TARGET_COL].astype(str).str.strip()
+    cleaned = cleaned[cleaned[TARGET_COL].isin(["No", "Yes"])]
+    return cleaned.dropna(subset=FEATURE_COLS + [TARGET_COL])
 
 
 def build_pipeline() -> Pipeline:
-    indexers = [
-        StringIndexer(inputCol=column, outputCol=f"{column}_index", handleInvalid="keep")
-        for column in CATEGORICAL_COLS
-    ]
-    label_indexer = StringIndexer(inputCol="Churn", outputCol="label")
-    assembler = VectorAssembler(
-        inputCols=[f"{column}_index" for column in CATEGORICAL_COLS] + NUMERIC_COLS,
-        outputCol="raw_features",
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("categorical", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL_COLS),
+            ("numeric", StandardScaler(), NUMERIC_COLS),
+        ]
     )
-    scaler = StandardScaler(
-        inputCol="raw_features",
-        outputCol="features",
-        withStd=True,
-        withMean=False,
-    )
+
     classifier = RandomForestClassifier(
-        labelCol="label",
-        featuresCol="features",
-        numTrees=25,
-        maxDepth=5,
-        seed=42,
+        n_estimators=100,
+        max_depth=8,
+        random_state=42,
+        n_jobs=-1,
     )
-    return Pipeline(stages=indexers + [label_indexer, assembler, scaler, classifier])
+
+    return Pipeline(
+        steps=[
+            ("preprocessor", preprocessor),
+            ("model", classifier),
+        ]
+    )
 
 
-@st.cache_resource(show_spinner="Loading PySpark model...")
-def load_or_train_model():
-    spark = get_spark_session()
+def train_and_save_model() -> dict:
+    data = clean_churn_data(pd.read_csv(DATA_PATH))
+    model = build_pipeline()
+    model.fit(data[FEATURE_COLS], data[TARGET_COL])
 
+    bundle = {
+        "version": MODEL_VERSION,
+        "model": model,
+        "features": FEATURE_COLS,
+        "target": TARGET_COL,
+    }
+    joblib.dump(bundle, MODEL_PATH)
+    return bundle
+
+
+def is_valid_model_bundle(bundle: object) -> bool:
+    if not isinstance(bundle, dict):
+        return False
+
+    model = bundle.get("model")
+    return (
+        bundle.get("version") == MODEL_VERSION
+        and bundle.get("features") == FEATURE_COLS
+        and hasattr(model, "predict")
+        and hasattr(model, "predict_proba")
+    )
+
+
+@st.cache_resource(show_spinner="Loading churn model...")
+def load_or_train_model() -> tuple[dict, str]:
     if MODEL_PATH.exists():
-        return PipelineModel.load(spark_path(MODEL_PATH)), "loaded"
+        try:
+            bundle = joblib.load(MODEL_PATH)
+            if is_valid_model_bundle(bundle):
+                return bundle, "loaded"
+        except Exception:
+            pass
 
-    df = spark.read.csv(spark_path(DATA_PATH), header=True, inferSchema=True)
-    df = clean_churn_data(df)
-
-    model = build_pipeline().fit(df)
-    model.write().overwrite().save(spark_path(MODEL_PATH))
-    return model, "trained"
-
-
-def get_label_order(model: PipelineModel) -> list[str]:
-    for stage in model.stages:
-        if hasattr(stage, "labels") and stage.getOutputCol() == "label":
-            return list(stage.labels)
-    return ["No", "Yes"]
-
-
-def predict_customer(model: PipelineModel, customer: dict):
-    spark = get_spark_session()
-    input_df = spark.createDataFrame([customer])
-    row = model.transform(input_df).select("prediction", "probability").first()
-    labels = get_label_order(model)
-
-    predicted_label = labels[int(row["prediction"])]
-    churn_index = labels.index("Yes") if "Yes" in labels else 1
-    churn_probability = float(row["probability"][churn_index])
-    return predicted_label, churn_probability
+    return train_and_save_model(), "trained"
 
 
 def yes_no_to_int(value: str) -> int:
     return 1 if value == "Yes" else 0
+
+
+def predict_customer(bundle: dict, customer: dict) -> tuple[str, float]:
+    model = bundle["model"]
+    input_df = pd.DataFrame([customer], columns=FEATURE_COLS)
+
+    prediction = str(model.predict(input_df)[0])
+    probabilities = model.predict_proba(input_df)[0]
+    classes = list(model.named_steps["model"].classes_)
+    churn_index = classes.index("Yes") if "Yes" in classes else 1
+    churn_probability = float(probabilities[churn_index])
+
+    return prediction, churn_probability
 
 
 def main() -> None:
@@ -134,20 +135,21 @@ def main() -> None:
     st.write("Enter a customer profile and predict whether the customer is likely to churn.")
 
     try:
-        model, model_status = load_or_train_model()
+        model_bundle, model_status = load_or_train_model()
     except Exception as exc:
-        st.error("PySpark could not load or train the churn model.")
+        st.error("The churn model could not be loaded or trained.")
         st.exception(exc)
         st.stop()
 
     with st.sidebar:
         st.header("Model")
-        st.write("PySpark Random Forest")
+        st.write("Scikit-learn Random Forest")
         st.write(f"Data file: `{DATA_PATH.name}`")
+        st.write(f"Model file: `{MODEL_PATH.name}`")
         if model_status == "trained":
             st.success("Model trained and saved.")
         else:
-            st.success("Saved Spark model loaded.")
+            st.success("Saved model loaded.")
 
     with st.form("customer_form"):
         st.subheader("Customer Details")
@@ -210,10 +212,8 @@ def main() -> None:
     if submitted:
         customer = {
             "gender": gender,
-            "SeniorCitizen": yes_no_to_int(senior_citizen),
             "Partner": partner,
             "Dependents": dependents,
-            "tenure": int(tenure),
             "PhoneService": phone_service,
             "MultipleLines": multiple_lines,
             "InternetService": internet_service,
@@ -226,12 +226,13 @@ def main() -> None:
             "Contract": contract,
             "PaperlessBilling": paperless_billing,
             "PaymentMethod": payment_method,
+            "SeniorCitizen": yes_no_to_int(senior_citizen),
+            "tenure": int(tenure),
             "MonthlyCharges": float(monthly_charges),
             "TotalCharges": float(total_charges),
-            "Churn": "No",
         }
 
-        prediction, probability = predict_customer(model, customer)
+        prediction, probability = predict_customer(model_bundle, customer)
 
         st.subheader("Prediction")
         st.metric("Churn probability", f"{probability:.1%}")
