@@ -1,6 +1,7 @@
 📊 Telcom Customer Churn Prediction
 
-A Machine Learning-based web application that predicts whether a telecom customer is likely to churn or not. The project uses a trained model and an interactive Streamlit interface for real-time predictions.
+A Machine Learning-based web application that predicts whether a telecom customer is likely to churn or not.
+The project uses a trained model and an interactive Streamlit interface for real-time predictions.
 
 🚀 Features
 Predict customer churn in real-time
