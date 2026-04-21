@@ -1,68 +1,94 @@
-📊 Telcom Customer Churn Prediction
+# 📊 Telcom Customer Churn Prediction
 
-A Machine Learning-based web application that predicts whether a telecom customer is likely to churn or not.
-The project uses a trained model and an interactive Streamlit interface for real-time predictions.
+A Machine Learning web application that predicts whether a telecom customer is likely to churn or not. Built using Streamlit for an interactive UI and a Random Forest model for accurate predictions.
 
-🚀 Features
-Predict customer churn in real-time
-User-friendly web interface using Streamlit
-Displays churn probability with prediction result
-Uses key customer attributes like:
-Tenure
-Contract type
-Payment method
-Monthly charges
 
-🧠 Model Details
-Algorithm: Random Forest Classifier
-Library: Scikit-learn
-Includes data preprocessing and feature encoding
-Trained on telecom customer dataset
-🛠️ Tech Stack
-Python
-Pandas
-NumPy
-Scikit-learn
-Streamlit
+## 🚀 Features
 
-📁 Project Structure
+- Real-time churn prediction  
+- User-friendly interface using Streamlit  
+- Displays churn probability with result  
+- Uses customer details like:
+  - Tenure  
+  - Contract type  
+  - Payment method  
+  - Monthly charges  
+
+
+
+## 🧠 Model Details
+
+- Algorithm: Random Forest Classifier  
+- Library: Scikit-learn  
+- Includes preprocessing and feature handling  
+- Trained on telecom dataset  
+
+
+
+## 🛠 Tech Stack
+
+- Python  
+- Pandas  
+- NumPy  
+- Scikit-learn  
+- Streamlit  
+
+
+
+## 📁 Project Structure
+
 Telcom_churn_prediction/
-│── app.py                # Streamlit application
-│── model.pkl            # Trained ML model
-│── churn_data.csv       # Dataset
-│── README.md            # Project documentation
+│── app.py  
+│── model.pkl  
+│── churn_data.csv  
+│── README.md  
 
 
-▶️ How to Run the Project
-Clone the repository:
-git clone https://github.com/your-username/Telcom_churn_prediction.git
-cd Telcom_churn_prediction
-Install dependencies:
-pip install -r requirements.txt
-Run the application:
-streamlit run app.py
-Open in browser:
-http://localhost:8501
 
-📊 Output
-Displays Churn Probability (%)
-Shows prediction:
-✅ Likely to Churn
-❌ Not Likely to Churn
-🎯 Use Case
+## ▶️ How to Run
 
-This project helps telecom companies:
-Identify customers at risk of leaving
-Take proactive retention actions
-Improve business decision-making
-🔗 GitHub Repository
+1. Clone the repository:
+https://github.com/shubhamkamate2005-netizen/Telcom_Churn_prediction.git
+cd Telcom_churn_prediction  
 
-👉 Add your repo link here[https://github.com/shubhamkamate2005-netizen/Telcom_Churn_prediction.git]
-🙌 Future Improvements
-Deploy on Streamlit Cloud
-Add data visualization dashboard
-Improve model accuracy with tuning
-Add more ML models for comparison
+2. Install dependencies:
 
-📌 Author
+pip install -r requirements.txt  
+
+3. Run the app:
+
+streamlit run app.py  
+
+4. Open in browser:
+
+http://localhost:8501  
+
+
+
+## 📊 Output
+
+- Shows churn probability (%)  
+- Displays prediction:
+  - Likely to Churn  
+  - Not Likely to Churn  
+
+
+
+## 🎯 Use Case
+
+Helps telecom companies:
+- Identify at-risk customers  
+- Improve retention strategies  
+- Support business decisions  
+
+
+## 🔮 Future Improvements
+
+- Deploy on Streamlit Cloud  
+- Add data visualization  
+- Improve model accuracy  
+- Compare multiple ML models  
+
+
+## 👨‍💻 Author
 Shubham Kamate
